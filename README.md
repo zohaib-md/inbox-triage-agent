@@ -79,4 +79,21 @@ Example JSON Output:
 ---
 
 ## Deployment
-*(Deployment options available via `agents-cli scaffold enhance` or `agents-cli deploy` — pending confirmation)*
+
+Deployed to **Google Cloud Run** using `agents-cli`:
+
+- **Project**: `inbox-triage-dev-507920`
+- **Region**: `us-central1`
+- **Service Name**: `inbox-triage-agent`
+- **Service URL**: `https://inbox-triage-agent-723976801056.us-central1.run.app`
+
+### Verified Live Endpoints
+1. **A2A Agent Card**:
+   ```bash
+   TOKEN=$(gcloud auth print-identity-token)
+   curl -H "Authorization: Bearer $TOKEN" \
+     https://inbox-triage-agent-723976801056.us-central1.run.app/a2a/app/.well-known/agent-card.json
+   ```
+2. **Live SSE Inference (`/run_sse`)**:
+   Full real-time streaming inference powered by **Gemini 2.5 Flash on Vertex AI** with automated tool calling (`assess_outage_severity` & `enforce_triage_policy`).
+
