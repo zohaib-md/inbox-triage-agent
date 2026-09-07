@@ -1,0 +1,234 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "case_01_urgent_outage",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: CRITICAL: 500 Internal Server Errors across all US-East API endpoints\nSender: alex.ops@enterpriseclient.com\nBody: Our production checkout service is completely halted because calls to your API are returning 500 errors for the past 12 minutes. This is a severe outage affecting our paying customers. Need urgent escalation and status update immediately."
+          }
+        ]
+      },
+      "expected_classification": "urgent",
+      "must_have_draft": true,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"urgent\", \"confidence\": 0.98, \"reasoning\": \"Production checkout outage affecting customers with 500 errors across API endpoints.\", \"draft_reply\": \"Hi Alex,\\n\\nThank you for reaching out, and we sincerely apologize for the disruption. Our on-call engineering and incident response teams have been immediately notified of the 500 errors on US-East API endpoints and are actively investigating this as a Tier-1 critical incident.\\n\\nWe are tracking this under Incident Ticket #INC-URGENT. We will provide updates every 15 minutes or as soon as we have technical resolution details.\\n\\nBest regards,\\nSaaS Support Incident Response Team\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_02_phishing_spam",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: [Action Required] Immediate Wallet Re-verification Required to Prevent Suspension\nSender: security-noreply@crypto-metamask-vault-auth99.biz\nBody: Dear Customer, Our automated compliance engine detected suspicious activity. You must verify your recovery secret seed phrase within 24 hours at http://bit.ly/verify-wallet-token or your account will be permanently locked."
+          }
+        ]
+      },
+      "expected_classification": "spam",
+      "must_have_draft": false,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"spam\", \"confidence\": 0.99, \"reasoning\": \"Phishing attempt with fraudulent crypto wallet verification and credential harvesting link.\", \"draft_reply\": null}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_03_ambiguous_context",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Quick follow-up on that thing we discussed\nSender: pat@partnerorganization.org\nBody: Hey, just checking in to see if you guys ever finalized that feature we talked about by the booth at SaaStr last month? We want to know if we should wait or move forward with the alternate provider. Let me know."
+          }
+        ]
+      },
+      "expected_classification": "needs_human_review",
+      "must_have_draft": false,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"needs_human_review\", \"confidence\": 0.65, \"reasoning\": \"Ambiguous reference to an in-person conference conversation with no specific feature name, account details, or ticket context. Requires human knowledge to decipher.\", \"draft_reply\": null}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_04_routine_billing",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Switching from monthly to annual billing & updating VAT ID\nSender: billing@fintechstartup.co\nBody: Hello, we are currently on the Team tier paying $79/month billed on the 18th. If we switch to annual billing today, how does the 20% annual discount apply to our remaining monthly days? Also, where in the dashboard can we input our European VAT number so our invoices don't get charged reverse VAT? Thanks!"
+          }
+        ]
+      },
+      "expected_classification": "needs_reply",
+      "must_have_draft": true,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"needs_reply\", \"confidence\": 0.95, \"reasoning\": \"Standard customer billing inquiry regarding annual discount proration and VAT ID configuration.\", \"draft_reply\": \"Hi there,\\n\\nThanks for reaching out! Here are the details for your billing questions:\\n\\n1. Switching to Annual Billing: When you switch to annual billing, any unused days in your current monthly billing cycle (from today until the 18th) are prorated as an account credit and applied immediately against the discounted annual total (which includes the 20% discount).\\n\\n2. Adding your VAT ID: You can add or update your VAT ID by navigating to Settings > Billing > Tax Details in your dashboard. Once saved, reverse-charge VAT will automatically apply to all upcoming invoices.\\n\\nPlease let us know if you need any assistance making the switch!\\n\\nBest regards,\\nSupport Team\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_05_vague_oneliner",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: error\nSender: sam994@gmail.com\nBody: it broke again"
+          }
+        ]
+      },
+      "expected_classification": "needs_human_review",
+      "must_have_draft": false,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"needs_human_review\", \"confidence\": 0.50, \"reasoning\": \"Vague one-line message with no context, error code, URL, or explanation of what failed. Cannot safely triage or draft a meaningful reply without human review.\", \"draft_reply\": null}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_06_fyi_maintenance",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Notification: Scheduled Database Maintenance Completed (Staging Cluster)\nSender: status-alerts@cloudprovider-status.net\nBody: The scheduled maintenance window for Staging DB Cluster B (US-Central) has completed successfully. All health probes are nominal. No customer action or reply is required."
+          }
+        ]
+      },
+      "expected_classification": "fyi",
+      "must_have_draft": false,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"fyi\", \"confidence\": 0.99, \"reasoning\": \"Automated maintenance completion announcement explicitly stating no action or reply required.\", \"draft_reply\": null}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_07_bug_report_reproducible",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Bug: CSV export fails with HTTP 413 when exporting > 5,000 transactions\nSender: dev-lead@retailmetrics.io\nBody: Hi Support, we encountered a bug in the Transactions view. When filtering for a date range with more than 5,000 rows and clicking 'Export as CSV', the web client displays an HTTP 413 Payload Too Large error modal. Steps: 1) Go to Analytics > Transactions, 2) Select Date Range: Last 90 days, 3) Click Export CSV. We reproduced this on Chrome 122 and Safari 17. Can you look into this?"
+          }
+        ]
+      },
+      "expected_classification": "needs_reply",
+      "must_have_draft": true,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"needs_reply\", \"confidence\": 0.96, \"reasoning\": \"Clear bug report with reproduction steps and browser details regarding CSV export payload size.\", \"draft_reply\": \"Hi team,\\n\\nThank you for reporting this issue and providing detailed reproduction steps. We have reproduced the HTTP 413 Payload Too Large error when exporting datasets exceeding 5,000 transactions, and our engineering team is actively preparing a fix for the export worker service.\\n\\nIn the meantime, as a temporary workaround, exporting the dataset in 30-day increments will allow the exports to complete without hitting the payload ceiling.\\n\\nWe will update you as soon as the patch is deployed.\\n\\nBest regards,\\nSupport Engineering Team\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_08_feature_request",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Feature Request: Slack webhook integrations for critical event alerts\nSender: alex@growthops.com\nBody: Hey support team! We love the webhook dispatch system, but our on-call engineers live in Slack. Is there native support for posting failed webhook notifications directly into a Slack incoming webhook channel, or is that on your Q3/Q4 roadmap?"
+          }
+        ]
+      },
+      "expected_classification": "needs_reply",
+      "must_have_draft": true,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"needs_reply\", \"confidence\": 0.94, \"reasoning\": \"Constructive feature inquiry asking about native Slack webhook integrations and product roadmap.\", \"draft_reply\": \"Hi Alex,\\n\\nThank you for the kind words and the great suggestion!\\n\\nWhile native Slack webhook dispatch is currently scheduled for our Q4 roadmap, you can achieve this today by pointing your webhook endpoint to a Zapier or Make.com webhook URL that forwards notifications to your Slack channel with standard payload formatting.\\n\\nI have logged your request with our product team to help prioritize native Slack channel routing. Let us know if you need help formatting the event payload!\\n\\nBest regards,\\nProduct Support Team\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_09_sla_enterprise_escalation",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: SLA BREACH ALERT: Webhook delivery failures impacting enterprise tier\nSender: cto@globalfinserve.com\nBody: Attention Executive Support: Since 08:30 UTC, none of our inbound events are triggering webhook callbacks. Our enterprise SLA guarantees 99.99% uptime with 30-minute escalation response time. We are currently losing customer transactions. Escalate to the lead incident commander immediately."
+          }
+        ]
+      },
+      "expected_classification": "urgent",
+      "must_have_draft": true,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"urgent\", \"confidence\": 0.99, \"reasoning\": \"Enterprise customer facing SLA breach due to complete webhook delivery failure impacting customer transactions.\", \"draft_reply\": \"Dear CTO,\\n\\nWe acknowledge receipt of your urgent SLA escalation regarding webhook delivery failures since 08:30 UTC. This ticket has been prioritized with highest severity (P1/Tier-1) and escalated directly to our Lead Incident Commander and Platform Infrastructure team.\\n\\nOur team is currently diagnosing the webhook dispatch queue and worker pools. We will provide formal status updates directly on this thread within our 30-minute SLA commitment.\\n\\nSincerely,\\nExecutive Customer Engineering Support\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "case_10_cold_sales_spam",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Email Subject: Grow your SaaS pipeline by 10x with AI outbound calling\nSender: brad@ai-leadgen-hypergrowth.biz\nBody: Hey there, I saw your SaaS tool on ProductHunt. Most founders struggle with cold outreach. We built an autonomous AI voice caller that books 50+ meetings a week. Do you have 15 minutes this Thursday at 10 AM PST to see a quick demo? Unsubscribe here: http://ai-leadgen-hypergrowth.biz/optout"
+          }
+        ]
+      },
+      "expected_classification": "spam",
+      "must_have_draft": false,
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "{\"classification\": \"spam\", \"confidence\": 0.98, \"reasoning\": \"Unsolicited commercial cold sales outreach and promotional marketing pitch.\", \"draft_reply\": null}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

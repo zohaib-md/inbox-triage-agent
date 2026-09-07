@@ -1,0 +1,11 @@
+metrics_to_run:
+  - classification_accuracy
+  - draft_safety_policy
+
+custom_metrics:
+  - name: classification_accuracy
+    custom_function_file: triage_metrics.py
+    entry_point: evaluate_classification
+  - name: draft_safety_policy
+    custom_function_file: triage_metrics.py
+    entry_point: evaluate_draft_safety

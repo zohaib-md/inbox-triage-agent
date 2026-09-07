@@ -36,3 +36,5 @@ client_secret*.json
 *.pem
 *.key
 *.secret
+.google-agents-cli/
+uv.lock
