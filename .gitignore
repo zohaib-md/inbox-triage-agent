@@ -1,0 +1,38 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution and packaging
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+*.egg
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# OS specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Evaluation output & traces
+results.json
+results_*.json
+results_*.html
+artifacts/grade_results/
+
+# Credentials, secrets, and service account keys
+credentials.json
+service_account.json
+client_secret*.json
+*.pem
+*.key
+*.secret
