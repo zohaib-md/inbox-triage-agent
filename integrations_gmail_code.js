@@ -17,6 +17,7 @@ const LABELS = {
 
 function triageInbox() {
   ensureLabelsExist();
+  syncCalendarEvents();
 
   // Search inbox for unprocessed emails
   const searchQuery = `in:inbox -label:${LABELS.PROCESSED} -label:trash -label:spam`;
@@ -32,6 +33,7 @@ function triageInbox() {
     }
   }
 }
+
 
 function processThread(thread) {
   const messages = thread.getMessages();
@@ -169,3 +171,40 @@ function applyLabel(thread, labelName) {
   const label = GmailApp.getUserLabelByName(labelName) || GmailApp.createLabel(labelName);
   thread.addLabel(label);
 }
+
+/**
+ * Automatically syncs events extracted by the Voice-to-Task Agent into Google Calendar!
+ */
+function syncCalendarEvents() {
+  try {
+    const url = `${BASE_URL}/voice/records`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const events = data.events || [];
+    const calendar = CalendarApp.getDefaultCalendar();
+
+    for (const ev of events) {
+      if (!ev.start_time) continue;
+      const startTime = new Date(ev.start_time);
+      const endTime = ev.end_time ? new Date(ev.end_time) : new Date(startTime.getTime() + 60 * 60 * 1000);
+
+      // Check if event with same title already exists in the time window
+      const searchStart = new Date(startTime.getTime() - 2 * 60 * 60 * 1000);
+      const searchEnd = new Date(endTime.getTime() + 2 * 60 * 60 * 1000);
+      const existing = calendar.getEvents(searchStart, searchEnd, { search: ev.title });
+
+      if (existing.length === 0) {
+        calendar.createEvent(ev.title, startTime, endTime, {
+          description: ev.description || "Created automatically by Voice-to-Task Agent",
+          location: ev.location || ""
+        });
+        Logger.log(`Created Google Calendar event: "${ev.title}" at ${startTime}`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error syncing calendar: ${err.message}`);
+  }
+}
+

@@ -122,6 +122,37 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def generate_google_calendar_url(
+    title: str,
+    start_iso: str,
+    end_iso: Optional[str] = None,
+    details: Optional[str] = None,
+    location: Optional[str] = None,
+) -> str:
+    """Generates a 1-click URL to save the event directly into Google Calendar."""
+    import urllib.parse
+    from datetime import datetime, timedelta
+
+    try:
+        st = datetime.fromisoformat(start_iso)
+        et = datetime.fromisoformat(end_iso) if end_iso else st + timedelta(hours=1)
+        fmt = "%Y%m%dT%H%M%S"
+        dates = f"{st.strftime(fmt)}/{et.strftime(fmt)}"
+    except Exception:
+        dates = start_iso.replace("-", "").replace(":", "")
+
+    params = {
+        "action": "TEMPLATE",
+        "text": title,
+        "dates": dates,
+    }
+    if details:
+        params["details"] = details
+    if location:
+        params["location"] = location
+    return "https://calendar.google.com/calendar/render?" + urllib.parse.urlencode(params)
+
+
 def format_telegram_reply(result: VoiceExtractionResult) -> str:
     """Formats the extracted events and tasks into a clean Telegram Markdown message."""
     lines = []
@@ -134,8 +165,10 @@ def format_telegram_reply(result: VoiceExtractionResult) -> str:
         lines.append("📅 *Scheduled Calendar Events:*")
         for ev in result.events:
             loc = f" (📍 {ev.location})" if ev.location else ""
-            lines.append(f"• *{ev.title}*\n  ⏰ `{ev.start_time}`{loc}")
+            cal_link = generate_google_calendar_url(ev.title, ev.start_time, ev.end_time, ev.description, ev.location)
+            lines.append(f"• *{ev.title}*\n  ⏰ `{ev.start_time}`{loc}\n  👉 [Add to Google Calendar]({cal_link})")
         lines.append("")
+
 
     if result.tasks:
         lines.append("✅ *Actionable To-Do Items:*")
