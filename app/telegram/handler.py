@@ -1,14 +1,17 @@
 import json
 import logging
 import os
+import re
 import urllib.request
 from typing import Any, Optional
 
 from app.briefing.briefing_agent import generate_morning_briefing
 from app.health.agent import process_medication_intake
 from app.health.tools import get_today_medication_status, log_medication_action
+from app.transit.agent import track_flight_status, track_train_status
 from app.voice.agent import process_voice_or_text
 from app.voice.schema import VoiceExtractionResult
+
 
 logger = logging.getLogger("telegram_handler")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8793298330:AAEdVPw2fCtSrRaVEaxcHajHnEu1QNiwcmE")
@@ -182,6 +185,27 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             edit_telegram_message(chat_id, msg_id, updated_text)
             return {"status": "ok", "action": "med_snoozed"}
 
+        elif data.startswith("refresh_transit:"):
+            # format: refresh_transit:<mode>:<identifier>
+            parts = data.split(":")
+            mode = parts[1] if len(parts) > 1 else "flight"
+            ident = parts[2] if len(parts) > 2 else ""
+
+            answer_callback_query(cq_id, text=f"🔄 Refreshing live {mode} status...")
+
+            if mode == "flight":
+                res = track_flight_status(ident)
+            else:
+                res = track_train_status(ident)
+
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "🔄 Refresh Live Status", "callback_data": res.get("refresh_callback", data)}]
+                ]
+            }
+            edit_telegram_message(chat_id, msg_id, res["formatted_reply"])
+            return {"status": "ok", "action": f"transit_refreshed_{mode}"}
+
         return {"status": "ignored"}
 
     # 2. Handle Regular Messages
@@ -197,6 +221,11 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         welcome_msg = (
             "👋 *Welcome to your Personal AI Assistant!*\n\n"
             "Here is everything you can do:\n\n"
+            "✈️ *Real-Time Flights, Trains & PNR*\n"
+            "• `/flight <number>` e.g. `/flight 6E 204` or `/flight AI 432`\n"
+            "• `/train <number/name>` e.g. `/train 12004` or `/train Vande Bharat`\n"
+            "• `/pnr <10-digit-pnr>` e.g. `/pnr 2839182910`\n"
+            "• Tap `[ 🔄 Refresh Status ]` anytime before boarding!\n\n"
             "🔍 *Live Web Search & Local Scout*\n"
             "Ask anything: _\"Top cafes in Hazratganj, Lucknow\"_ or type `/search <topic>`\n\n"
             "🎙️ *Voice-to-Task & Calendar*\n"
@@ -210,6 +239,65 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         )
         send_telegram_message(chat_id, welcome_msg)
         return {"status": "ok", "action": "sent_welcome"}
+
+    # Command: /flight <flight_number>
+    if text.startswith("/flight"):
+        query = text[7:].strip()
+        if not query:
+            send_telegram_message(
+                chat_id,
+                "✈️ *Please provide a flight number, for example:*\n"
+                "`/flight 6E 204`\n"
+                "`/flight AI 432`"
+            )
+            return {"status": "ok", "action": "sent_flight_help"}
+        flight_res = track_flight_status(query)
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "🔄 Refresh Live Status", "callback_data": flight_res["refresh_callback"]}]
+            ]
+        }
+        send_telegram_message(chat_id, flight_res["formatted_reply"], reply_markup=reply_markup)
+        return {"status": "ok", "action": "flight_tracked"}
+
+    # Command: /train <train_number_or_name>
+    if text.startswith("/train"):
+        query = text[6:].strip()
+        if not query:
+            send_telegram_message(
+                chat_id,
+                "🚆 *Please provide a train number or name, for example:*\n"
+                "`/train 12004`\n"
+                "`/train 22436 Vande Bharat`"
+            )
+            return {"status": "ok", "action": "sent_train_help"}
+        train_res = track_train_status(query)
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "🔄 Refresh Live Status", "callback_data": train_res["refresh_callback"]}]
+            ]
+        }
+        send_telegram_message(chat_id, train_res["formatted_reply"], reply_markup=reply_markup)
+        return {"status": "ok", "action": "train_tracked"}
+
+    # Command: /pnr <10_digit_pnr>
+    if text.startswith("/pnr"):
+        query = text[4:].strip()
+        if not query:
+            send_telegram_message(
+                chat_id,
+                "🎫 *Please provide your 10-digit PNR number, for example:*\n"
+                "`/pnr 2839182910`"
+            )
+            return {"status": "ok", "action": "sent_pnr_help"}
+        pnr_res = track_train_status(query)
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "🔄 Refresh Live Status", "callback_data": pnr_res["refresh_callback"]}]
+            ]
+        }
+        send_telegram_message(chat_id, pnr_res["formatted_reply"], reply_markup=reply_markup)
+        return {"status": "ok", "action": "pnr_tracked"}
 
     # Command: /search <query>
     if text.startswith("/search"):
@@ -314,6 +402,36 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             reply_markup = {"inline_keyboard": buttons} if buttons else None
             send_telegram_message(chat_id, med_result.confirmation_message, reply_markup=reply_markup)
             return {"status": "ok", "action": "medication_scheduled"}
+
+        # Check if text is a flight query (e.g. "6E 204", "AI 432", "flight status")
+        flight_pattern = r"\b(6E|AI|UK|SG|QP|G8|IX|I5|EK|QR|BA|LH|EY|FZ|TG|MH)\s*[- ]?\s*(\d{2,4})\b"
+        if re.search(flight_pattern, text, re.IGNORECASE) or text.lower().startswith("flight"):
+            flight_res = track_flight_status(text)
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "🔄 Refresh Live Status", "callback_data": flight_res["refresh_callback"]}]
+                ]
+            }
+            send_telegram_message(chat_id, flight_res["formatted_reply"], reply_markup=reply_markup)
+            return {"status": "ok", "action": "flight_tracked"}
+
+        # Check if text is a PNR or Train running status query
+        pnr_match = re.search(r"\b\d{10}\b", text)
+        is_train_query = (
+            bool(pnr_match)
+            or "pnr" in text.lower()
+            or bool(re.search(r"\b\d{5}\b", text))
+            or any(w in text.lower() for w in ["running status", "train status", "where is train", "vande bharat", "shatabdi", "rajdhani", "lucknow mail"])
+        )
+        if is_train_query and not any(k in text.lower() for k in ["remind", "medicine", "pill", "phone", "mobile"]):
+            train_res = track_train_status(text)
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "🔄 Refresh Live Status", "callback_data": train_res["refresh_callback"]}]
+                ]
+            }
+            send_telegram_message(chat_id, train_res["formatted_reply"], reply_markup=reply_markup)
+            return {"status": "ok", "action": "train_tracked"}
 
         # Check if text is a search query, local recommendation, or question
         search_triggers = ["find", "search", "who is", "who won", "what is", "where is", "how to", "best ", "top ", "recommend", "latest news", "tell me about"]
