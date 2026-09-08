@@ -21,6 +21,7 @@ function triageInbox() {
   syncMedicationLogsToSheet();
   checkMedicationAlerts();
   sendApprovedDrafts();
+  syncVaultDocumentsToDrive();
 
   // Search inbox for unprocessed emails
 
@@ -364,3 +365,67 @@ function sendApprovedDrafts() {
     Logger.log(`Error checking approved drafts: ${err.message}`);
   }
 }
+
+/**
+ * Automatically syncs vaulted documents and catalog to Google Drive!
+ */
+function syncVaultDocumentsToDrive() {
+  try {
+    const url = `${BASE_URL}/vault/records`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const docs = data.documents || [];
+    if (docs.length === 0) return;
+
+    const folderName = "My AI Document Vault";
+    const folders = DriveApp.getFoldersByName(folderName);
+    let folder;
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder(folderName);
+      Logger.log(`Created new Google Drive folder: "${folderName}"`);
+    }
+
+    const sheetName = "Vault Catalog & Index";
+    const files = folder.getFilesByName(sheetName);
+    let spreadsheet;
+    if (files.hasNext()) {
+      spreadsheet = SpreadsheetApp.open(files.next());
+    } else {
+      spreadsheet = SpreadsheetApp.create(sheetName);
+      const file = DriveApp.getFileById(spreadsheet.getId());
+      folder.addFile(file);
+      DriveApp.getRootFolder().removeFile(file);
+
+      const sheet = spreadsheet.getActiveSheet();
+      sheet.appendRow(["Doc ID", "Document Name", "Category", "Ingested Date", "Summary", "Highlights"]);
+      sheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#E8F0FE");
+    }
+
+    const sheet = spreadsheet.getActiveSheet();
+    const existingData = sheet.getDataRange().getValues();
+    const existingIds = new Set(existingData.map(row => row[0]));
+
+    for (const doc of docs) {
+      if (!existingIds.has(doc.doc_id)) {
+        const hlStr = (doc.highlights || []).join("; ");
+        sheet.appendRow([
+          doc.doc_id,
+          doc.filename,
+          doc.doc_type,
+          doc.upload_date,
+          doc.summary,
+          hlStr
+        ]);
+        existingIds.add(doc.doc_id);
+        Logger.log(`Synced vaulted document to Google Drive catalog: ${doc.filename}`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error syncing vault documents to Drive: ${err.message}`);
+  }
+}
+

@@ -522,6 +522,10 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         welcome_msg = (
             "👋 *Welcome to your Personal AI Assistant!*\n\n"
             "Here is everything you can do:\n\n"
+            "📄 *Second Brain Document & Medical Vault*\n"
+            "• Drop any PDF, medical report, contract, or insurance scan into this chat!\n"
+            "• Type `/docs` to see all vaulted documents\n"
+            "• Ask anything: _\"What was my Vitamin B12 level?\"_ or type `/vault <question>`\n\n"
             "⏰ *Proactive Automation*\n"
             "• `/subscribe` — Receive automated 8:00 AM briefing & medication reminders\n"
             "• `/unsubscribe` — Pause automated reminders\n\n"
@@ -543,6 +547,28 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         )
         send_telegram_message(chat_id, welcome_msg)
         return {"status": "ok", "action": "sent_welcome"}
+
+    # Command: /docs (List all vaulted documents)
+    if text.startswith("/docs"):
+        from app.vault.agent import format_docs_list
+        send_telegram_message(chat_id, format_docs_list())
+        return {"status": "ok", "action": "sent_docs_list"}
+
+    # Command: /vault <question>
+    if text.startswith("/vault"):
+        query = text[6:].strip()
+        from app.vault.agent import query_vault
+        if not query:
+            send_telegram_message(
+                chat_id,
+                "💡 *Please ask a question about your vaulted documents:*\n"
+                "e.g. `/vault What was my Vitamin B12 level in the blood test?`\n"
+                "or `/vault What is my insurance policy number?`"
+            )
+            return {"status": "ok", "action": "sent_vault_help"}
+        vault_res = query_vault(query)
+        send_telegram_message(chat_id, vault_res["formatted_reply"])
+        return {"status": "ok", "action": "vault_queried"}
 
     # Command: /subscribe
     if text.startswith("/subscribe"):
@@ -713,6 +739,46 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         send_telegram_message(chat_id, reply_body)
         return {"status": "ok", "events_count": len(result.events), "tasks_count": len(result.tasks)}
 
+    # Document or PDF Upload
+    doc = message.get("document")
+    if doc:
+        file_id = doc["file_id"]
+        filename = doc.get("file_name", "document.pdf")
+        mime_type = doc.get("mime_type", "application/pdf")
+        send_telegram_message(chat_id, f"📥 *Analyzing document `{filename}` with Gemini 2.5 Flash...*")
+
+        file_bytes = download_telegram_file(file_id)
+        if not file_bytes:
+            send_telegram_message(chat_id, "❌ *Failed to download document from Telegram.*")
+            return {"status": "error", "reason": "download_failed"}
+
+        from app.vault.agent import ingest_document
+        res = ingest_document(file_bytes=file_bytes, filename=filename, mime_type=mime_type)
+        send_telegram_message(chat_id, res["formatted_reply"])
+        return {"status": "ok", "action": "document_vaulted", "doc_id": res.get("doc_id")}
+
+    # Photo or Image Scan Upload
+    photos = message.get("photo")
+    if photos and isinstance(photos, list) and len(photos) > 0:
+        photo = photos[-1]
+        file_id = photo["file_id"]
+        raw_caption = (message.get("caption") or "").strip()
+        filename = f"{raw_caption[:24].replace(' ', '_')}.jpg" if raw_caption else "document_scan.jpg"
+        if not filename.endswith((".jpg", ".jpeg", ".png")):
+            filename += ".jpg"
+
+        send_telegram_message(chat_id, f"📸 *Scanning and indexing image document with Gemini 2.5 Flash...*")
+
+        file_bytes = download_telegram_file(file_id)
+        if not file_bytes:
+            send_telegram_message(chat_id, "❌ *Failed to download image from Telegram.*")
+            return {"status": "error", "reason": "download_failed"}
+
+        from app.vault.agent import ingest_document
+        res = ingest_document(file_bytes=file_bytes, filename=filename, mime_type="image/jpeg")
+        send_telegram_message(chat_id, res["formatted_reply"])
+        return {"status": "ok", "action": "photo_vaulted", "doc_id": res.get("doc_id")}
+
     elif text:
         # Check if text is adding a medication
         med_keywords = ["medicine", "pill", "tablet", "dose", "antibiotic", "vitamin", "prescribe", "medication", "syrup"]
@@ -760,6 +826,18 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             }
             send_telegram_message(chat_id, train_res["formatted_reply"], reply_markup=reply_markup)
             return {"status": "ok", "action": "train_tracked"}
+
+        # Check if text is asking about personal vaulted documents/medical reports
+        vault_triggers = [
+            "my blood test", "my lab report", "my report", "my test result",
+            "my insurance", "my policy", "my agreement", "my contract", "my lease", "my rent",
+            "in my pdf", "in my document", "in my vault", "what was my vitamin", "what was my cholesterol", "what was my hba1c"
+        ]
+        if any(trig in text.lower() for trig in vault_triggers):
+            from app.vault.agent import query_vault
+            vault_res = query_vault(text)
+            send_telegram_message(chat_id, vault_res["formatted_reply"])
+            return {"status": "ok", "action": "vault_queried"}
 
         # Check if text is a search query, local recommendation, or question
         search_triggers = ["find", "search", "who is", "who won", "what is", "where is", "how to", "best ", "top ", "recommend", "latest news", "tell me about"]

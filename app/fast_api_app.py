@@ -165,6 +165,37 @@ async def email_mark_sent(payload: dict):
     return {"status": "ok" if success else "not_found", "draft_id": draft_id}
 
 
+# --- Second Brain Document & Medical Vault Routes ---
+@app.get("/vault/records")
+async def vault_records():
+    """Returns all documents indexed in the Second Brain Vault."""
+    from app.vault.agent import list_vaulted_documents
+    return {"documents": list_vaulted_documents()}
+
+
+@app.get("/vault/document/{doc_id}")
+async def vault_document(doc_id: str):
+    """Serves the raw document file for Google Drive sync or download."""
+    from fastapi.responses import FileResponse, JSONResponse
+    from app.vault.agent import list_vaulted_documents
+
+    docs = list_vaulted_documents()
+    for d in docs:
+        if d.get("doc_id") == doc_id:
+            fp = d.get("file_path")
+            if fp and os.path.exists(fp):
+                return FileResponse(fp, filename=d.get("filename", "document.pdf"), media_type=d.get("mime_type", "application/pdf"))
+    return JSONResponse(status_code=404, content={"error": "Document not found"})
+
+
+@app.post("/vault/query")
+async def vault_query(payload: dict):
+    """Answers natural language questions across all vaulted documents."""
+    from app.vault.agent import query_vault
+    question = payload.get("question", "")
+    return query_vault(question)
+
+
 # Main execution
 if __name__ == "__main__":
     import uvicorn
