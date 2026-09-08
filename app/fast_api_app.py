@@ -85,9 +85,38 @@ async def voice_records():
     return get_all_records()
 
 
+# --- Health & Medication Routes ---
+@app.get("/health/records")
+async def health_records():
+    """Returns all medication schedules and adherence logs."""
+    from app.health.tools import get_all_health_records
+    return get_all_health_records()
+
+
+@app.post("/health/log")
+async def health_log(payload: dict):
+    """Records an adherence action (taken/snoozed) for a medication dose."""
+    from app.health.tools import log_medication_action
+    return log_medication_action(
+        med_name=payload.get("med_name", "Medicine"),
+        scheduled_time=payload.get("scheduled_time", "09:00"),
+        status=payload.get("status", "taken"),
+        dosage=payload.get("dosage", "1 dose"),
+    )
+
+
+# --- Morning Briefing Routes ---
+@app.get("/briefing/today")
+async def briefing_today(name: str = "Zohaib"):
+    """Generates today's full 8:00 AM morning secretary briefing."""
+    from app.briefing.briefing_agent import generate_morning_briefing
+    return {"briefing": generate_morning_briefing(user_name=name)}
+
+
 # Main execution
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 

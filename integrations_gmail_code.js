@@ -18,8 +18,10 @@ const LABELS = {
 function triageInbox() {
   ensureLabelsExist();
   syncCalendarEvents();
+  syncMedicationLogsToSheet();
 
   // Search inbox for unprocessed emails
+
   const searchQuery = `in:inbox -label:${LABELS.PROCESSED} -label:trash -label:spam`;
   const threads = GmailApp.search(searchQuery, 0, BATCH_SIZE);
 
@@ -207,4 +209,55 @@ function syncCalendarEvents() {
     Logger.log(`Error syncing calendar: ${err.message}`);
   }
 }
+
+/**
+ * Automatically syncs medication adherence logs into a Google Sheet in Google Drive!
+ */
+function syncMedicationLogsToSheet() {
+  try {
+    const url = `${BASE_URL}/health/records`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const logs = data.logs || [];
+    if (logs.length === 0) return;
+
+    const sheetName = "My Health & Medication Log";
+    const files = DriveApp.getFilesByName(sheetName);
+    let spreadsheet;
+    if (files.hasNext()) {
+      spreadsheet = SpreadsheetApp.open(files.next());
+    } else {
+      spreadsheet = SpreadsheetApp.create(sheetName);
+      const sheet = spreadsheet.getActiveSheet();
+      sheet.appendRow(["Log ID", "Date", "Medication", "Dosage", "Scheduled For", "Time Taken", "Status"]);
+      sheet.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#E8F0FE");
+    }
+
+    const sheet = spreadsheet.getActiveSheet();
+    const existingData = sheet.getDataRange().getValues();
+    const existingIds = new Set(existingData.map(row => row[0]));
+
+    for (const log of logs) {
+      if (!existingIds.has(log.id)) {
+        const datePart = (log.taken_time || "").split(" ")[0];
+        sheet.appendRow([
+          log.id,
+          datePart,
+          log.med_name,
+          log.dosage || "1 dose",
+          log.scheduled_time,
+          log.taken_time,
+          log.status === "taken" ? "✅ Taken" : "⏰ Snoozed"
+        ]);
+        existingIds.add(log.id);
+        Logger.log(`Appended med log to Google Sheet: ${log.med_name} (${log.status})`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error syncing medication logs to Sheet: ${err.message}`);
+  }
+}
+
 
