@@ -1,0 +1,19 @@
+[
+  {
+    "doc_id": "doc_resume_zohaib",
+    "filename": "zohaibXresume (1).pdf",
+    "mime_type": "application/pdf",
+    "doc_type": "General",
+    "upload_date": "2026-09-08 19:51",
+    "file_size": 120000,
+    "file_path": "/tmp/vault_storage/doc_resume_zohaib_zohaibXresume_(1).pdf",
+    "summary": "Mohammad Zohaib is an Android Engineer and Software Developer with experience in mobile, backend, and AI systems, currently working as a Software Development Intern at Hyperzod. He has a strong background in building and shipping production Android applications, including leading a cross-functional team at Lettrblack, and possesses a B.Tech in Information Technology. His expertise spans various technologies and includes significant project contributions in areas like multi-tenant integration and AI orchestration.",
+    "highlights": [
+      "Current Role: Software Development Intern at Hyperzod (Jun 2026 - Present)",
+      "Previous Role: Android Developer Head at Lettrblack (Mar 2025 - Jun 2026)",
+      "Education: B.Tech, Information Technology from Ajay Kumar Garg Engineering College (2023-2027) with a CGPA of 8.1/10",
+      "Key Skills: Kotlin, Java, Python, Jetpack Compose, RoomDB, Coroutines, LangGraph, Gemini AI, PostgreSQL, Docker",
+      "Achievement: Led a cross-functional team of 5, architected an Android client, and fixed 3 production bugs within a single sprint at Lettrblack."
+    ]
+  }
+]

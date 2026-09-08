@@ -10,6 +10,7 @@ logger = logging.getLogger("vault_agent")
 MODEL_NAME = os.getenv("VAULT_AGENT_MODEL", "gemini-2.5-flash")
 VAULT_DIR = os.getenv("VAULT_STORAGE_DIR", "/tmp/vault_storage")
 VAULT_INDEX_FILE = os.getenv("VAULT_INDEX_FILE", "/tmp/vault_index.json")
+GCS_VAULT_BUCKET = os.getenv("GCS_VAULT_BUCKET", "inbox-triage-vault-507920")
 
 os.makedirs(VAULT_DIR, exist_ok=True)
 
@@ -37,23 +38,67 @@ Answer the user's question accurately and authoritatively based on their vaulted
 
 
 def _load_vault_index() -> list[dict[str, Any]]:
-    """Loads the list of stored document metadata from persistent JSON store."""
+    """Loads document metadata from local cache, GCS bucket, or bundled seed."""
+    # 1. Local cache file
     if os.path.exists(VAULT_INDEX_FILE):
         try:
             with open(VAULT_INDEX_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                if data:
+                    return data
         except Exception as e:
-            logger.error(f"Error loading vault index: {e}")
+            logger.error(f"Error loading vault index from local file: {e}")
+
+    # 2. Cloud Storage persistent bucket
+    if GCS_VAULT_BUCKET:
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            bucket = client.bucket(GCS_VAULT_BUCKET)
+            blob = bucket.blob("vault_index.json")
+            if blob.exists():
+                data = json.loads(blob.download_as_text())
+                if data:
+                    try:
+                        with open(VAULT_INDEX_FILE, "w") as f:
+                            json.dump(data, f, indent=2)
+                    except Exception:
+                        pass
+                    return data
+        except Exception as e:
+            logger.warning(f"Could not load vault index from GCS: {e}")
+
+    # 3. Bundled seed file (persists across Cloud Run deployments)
+    seed_path = os.path.join(os.path.dirname(__file__), "vault_index_seed.json")
+    if os.path.exists(seed_path):
+        try:
+            with open(seed_path, "r") as f:
+                seed_data = json.load(f)
+                if seed_data:
+                    return seed_data
+        except Exception as e:
+            logger.warning(f"Could not load vault seed: {e}")
+
     return []
 
 
 def _save_vault_index(docs: list[dict[str, Any]]) -> None:
-    """Saves document metadata to persistent JSON store."""
+    """Saves document metadata to local cache and syncs with Cloud Storage."""
     try:
         with open(VAULT_INDEX_FILE, "w") as f:
             json.dump(docs, f, indent=2)
     except Exception as e:
-        logger.error(f"Error saving vault index: {e}")
+        logger.error(f"Error saving local vault index: {e}")
+
+    if GCS_VAULT_BUCKET:
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            bucket = client.bucket(GCS_VAULT_BUCKET)
+            blob = bucket.blob("vault_index.json")
+            blob.upload_from_string(json.dumps(docs, indent=2), content_type="application/json")
+        except Exception as e:
+            logger.warning(f"Could not sync vault index to GCS: {e}")
 
 
 def ingest_document(
@@ -69,12 +114,22 @@ def ingest_document(
     safe_filename = filename.replace(" ", "_")
     storage_path = os.path.join(VAULT_DIR, f"{doc_id}_{safe_filename}")
 
-    # 1. Save raw file to vault storage
+    # 1. Save raw file to vault storage and GCS
     try:
         with open(storage_path, "wb") as f:
             f.write(file_bytes)
     except Exception as e:
         logger.error(f"Failed to write file to vault: {e}")
+
+    if GCS_VAULT_BUCKET:
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            bucket = client.bucket(GCS_VAULT_BUCKET)
+            blob = bucket.blob(f"documents/{doc_id}_{safe_filename}")
+            blob.upload_from_string(file_bytes, content_type=mime_type)
+        except Exception as e:
+            logger.warning(f"Could not upload file to GCS: {e}")
 
     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
