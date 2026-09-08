@@ -137,13 +137,32 @@ async def health_remind():
 
 @app.post("/telegram/broadcast/urgent-email")
 async def broadcast_urgent_email(payload: dict):
-    """Pushes a high-priority alert to subscribers when an urgent email is triaged in Gmail."""
+    """Pushes a high-priority alert with 1-tap Send button to subscribers when an urgent email is triaged in Gmail."""
     from app.telegram.handler import send_urgent_email_alert_push
     return send_urgent_email_alert_push(
         subject=payload.get("subject", "No Subject"),
         sender=payload.get("sender", "Unknown"),
         draft_reply=payload.get("draft_reply"),
+        draft_id=payload.get("draft_id"),
+        thread_id=payload.get("thread_id"),
     )
+
+
+# --- Gmail 1-Tap Reply Execution Routes ---
+@app.get("/email/pending-sends")
+async def email_pending_sends():
+    """Returns approved email drafts queued to be sent by Google Apps Script."""
+    from app.telegram.handler import get_pending_draft_sends
+    return {"pending_drafts": get_pending_draft_sends()}
+
+
+@app.post("/email/mark-sent")
+async def email_mark_sent(payload: dict):
+    """Acknowledges that a draft was sent by Apps Script and updates the Telegram message."""
+    from app.telegram.handler import mark_draft_sent
+    draft_id = payload.get("draft_id", "")
+    success = mark_draft_sent(draft_id)
+    return {"status": "ok" if success else "not_found", "draft_id": draft_id}
 
 
 # Main execution

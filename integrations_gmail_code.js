@@ -20,6 +20,7 @@ function triageInbox() {
   syncCalendarEvents();
   syncMedicationLogsToSheet();
   checkMedicationAlerts();
+  sendApprovedDrafts();
 
   // Search inbox for unprocessed emails
 
@@ -63,12 +64,24 @@ function processThread(thread) {
 
   Logger.log(`Decision: ${category} (conf: ${confidence})`);
 
-  // 1. Apply category label
+  // 1. If a draft reply was generated, attach draft to thread first to capture draft ID
+  let createdDraftId = null;
+  if (draftReply && category !== "spam" && category !== "fyi" && category !== "needs_human_review") {
+    try {
+      const draft = thread.createDraftReply(draftReply);
+      createdDraftId = draft.getId();
+      Logger.log(`Created draft reply for "${subject}" (Draft ID: ${createdDraftId})`);
+    } catch (e) {
+      Logger.log(`Could not create draft reply: ${e.message}`);
+    }
+  }
+
+  // 2. Apply category label & trigger alerts
   switch (category) {
     case "urgent":
       applyLabel(thread, LABELS.URGENT);
       thread.markImportant();
-      sendUrgentEmailAlert(subject, sender, draftReply);
+      sendUrgentEmailAlert(subject, sender, draftReply, createdDraftId, thread.getId());
       break;
     case "needs_reply":
       applyLabel(thread, LABELS.NEEDS_REPLY);
@@ -84,12 +97,6 @@ function processThread(thread) {
     default:
       applyLabel(thread, LABELS.NEEDS_REVIEW);
       break;
-  }
-
-  // 2. If a draft reply was generated, attach draft to thread
-  if (draftReply && category !== "spam" && category !== "fyi" && category !== "needs_human_review") {
-    thread.createDraftReply(draftReply);
-    Logger.log(`Created draft reply for "${subject}"`);
   }
 
   // 3. Mark processed so it never runs twice
@@ -290,15 +297,17 @@ function checkMedicationAlerts() {
 }
 
 /**
- * Pushes an urgent alert to Telegram when a high-priority email is triaged.
+ * Pushes an urgent alert to Telegram with 1-tap Send button when a high-priority email is triaged.
  */
-function sendUrgentEmailAlert(subject, sender, draftReply) {
+function sendUrgentEmailAlert(subject, sender, draftReply, draftId, threadId) {
   try {
     const url = `${BASE_URL}/telegram/broadcast/urgent-email`;
     const payload = JSON.stringify({
       subject: subject,
       sender: sender,
-      draft_reply: draftReply || null
+      draft_reply: draftReply || null,
+      draft_id: draftId || null,
+      thread_id: threadId || null
     });
     UrlFetchApp.fetch(url, {
       method: "post",
@@ -306,8 +315,52 @@ function sendUrgentEmailAlert(subject, sender, draftReply) {
       payload: payload,
       muteHttpExceptions: true
     });
-    Logger.log(`Sent urgent email alert to Telegram for: "${subject}"`);
+    Logger.log(`Sent urgent email alert with 1-tap send button for: "${subject}" (draft: ${draftId})`);
   } catch (err) {
     Logger.log(`Error sending urgent email alert to Telegram: ${err.message}`);
+  }
+}
+
+/**
+ * Checks for email drafts approved by you on Telegram and sends them via Gmail immediately!
+ */
+function sendApprovedDrafts() {
+  try {
+    const url = `${BASE_URL}/email/pending-sends`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const pendingDrafts = data.pending_drafts || [];
+    if (pendingDrafts.length === 0) return;
+
+    Logger.log(`Found ${pendingDrafts.length} approved draft(s) to send via Gmail.`);
+
+    for (const item of pendingDrafts) {
+      const draftId = item.draft_id;
+      if (!draftId) continue;
+
+      try {
+        const draft = GmailApp.getDraft(draftId);
+        if (draft) {
+          draft.send();
+          Logger.log(`🚀 Successfully sent approved draft ${draftId} from Gmail!`);
+
+          // Notify backend so Telegram message updates in place
+          UrlFetchApp.fetch(`${BASE_URL}/email/mark-sent`, {
+            method: "post",
+            contentType: "application/json",
+            payload: JSON.stringify({ draft_id: draftId }),
+            muteHttpExceptions: true
+          });
+        } else {
+          Logger.log(`Draft ${draftId} not found in Gmail drafts.`);
+        }
+      } catch (sendErr) {
+        Logger.log(`Error sending draft ${draftId}: ${sendErr.message}`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error checking approved drafts: ${err.message}`);
   }
 }

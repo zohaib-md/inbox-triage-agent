@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -159,34 +160,133 @@ def send_medication_reminder_push() -> dict[str, Any]:
     }
 
 
-def send_urgent_email_alert_push(subject: str, sender: str, draft_reply: Optional[str] = None) -> dict[str, Any]:
-    """Pushes a high-priority alert when an urgent email is detected in Gmail."""
+APPROVED_DRAFTS_FILE = "/tmp/approved_email_drafts.json"
+_APPROVED_DRAFTS: dict[str, dict[str, Any]] = {}
+
+
+def _load_approved_drafts() -> dict[str, dict[str, Any]]:
+    global _APPROVED_DRAFTS
+    if _APPROVED_DRAFTS:
+        return _APPROVED_DRAFTS
+    if os.path.exists(APPROVED_DRAFTS_FILE):
+        try:
+            with open(APPROVED_DRAFTS_FILE, "r") as f:
+                _APPROVED_DRAFTS.update(json.load(f))
+        except Exception:
+            pass
+    return _APPROVED_DRAFTS
+
+
+def _save_approved_drafts() -> None:
+    try:
+        with open(APPROVED_DRAFTS_FILE, "w") as f:
+            json.dump(_APPROVED_DRAFTS, f)
+    except Exception as e:
+        logger.error(f"Failed to save approved drafts: {e}")
+
+
+def queue_approved_draft(draft_id: str, metadata: dict[str, Any]) -> None:
+    """Queues a draft for sending by Google Apps Script."""
+    drafts = _load_approved_drafts()
+    drafts[draft_id] = {
+        "draft_id": draft_id,
+        "status": "pending_send",
+        "queued_at": datetime.datetime.now().isoformat(),
+        **metadata,
+    }
+    _save_approved_drafts()
+    logger.info(f"Queued approved draft for sending: {draft_id}")
+
+
+def get_pending_draft_sends() -> list[dict[str, Any]]:
+    """Returns all drafts waiting for Apps Script to send."""
+    drafts = _load_approved_drafts()
+    return [v for v in drafts.values() if v.get("status") == "pending_send"]
+
+
+def mark_draft_sent(draft_id: str) -> bool:
+    """Marks a draft as sent and updates the corresponding Telegram message."""
+    drafts = _load_approved_drafts()
+    if draft_id in drafts:
+        drafts[draft_id]["status"] = "sent"
+        drafts[draft_id]["sent_at"] = datetime.datetime.now().isoformat()
+        _save_approved_drafts()
+
+        # Update Telegram message if chat_id and message_id exist
+        chat_id = drafts[draft_id].get("chat_id")
+        msg_id = drafts[draft_id].get("message_id")
+        sender = drafts[draft_id].get("sender", "sender")
+        subject = drafts[draft_id].get("subject", "email")
+
+        if chat_id and msg_id:
+            now_str = datetime.datetime.now().strftime("%I:%M %p")
+            confirm_text = (
+                f"📬 *Email Reply Sent!*\n\n"
+                f"Your AI draft for *\"{subject}\"* was successfully delivered to *{sender}* via Gmail at `{now_str}`. ✅"
+            )
+            edit_telegram_message(chat_id, msg_id, confirm_text)
+
+        logger.info(f"Marked draft {draft_id} as sent and notified Telegram.")
+        return True
+    return False
+
+
+def send_urgent_email_alert_push(
+    subject: str,
+    sender: str,
+    draft_reply: Optional[str] = None,
+    draft_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Pushes a high-priority alert with 1-tap Send Draft Reply button when an urgent email is detected."""
     subscribers = get_subscribers()
     if not subscribers:
         return {"status": "noop", "message": "No registered subscribers."}
 
     lines = [
-        "🚨 *Urgent Email Alert in Gmail!*",
+        "🚨 *VIP Urgent Email Alert in Gmail!*",
         "",
         f"👤 *From:* {sender}",
         f"📌 *Subject:* {subject}",
     ]
     if draft_reply:
         lines.append("")
-        snippet = draft_reply[:200] + "..." if len(draft_reply) > 200 else draft_reply
-        lines.append(f"✍️ *AI Draft Prepared in Gmail:*\n_{snippet}_")
-    lines.append("")
-    lines.append("👉 Open Gmail to review and send.")
+        snippet = draft_reply[:250] + "..." if len(draft_reply) > 250 else draft_reply
+        lines.append(f"✍️ *Prepared AI Draft Reply:*\n_{snippet}_")
+
+    reply_markup = None
+    if draft_id:
+        lines.append("")
+        lines.append("👉 Tap below to dispatch this reply directly from your Gmail:")
+        buttons = [
+            [
+                {
+                    "text": "🚀 Send Draft Reply Now",
+                    "callback_data": f"send_email_draft:{draft_id}",
+                }
+            ],
+            [
+                {
+                    "text": "🔕 Dismiss Alert",
+                    "callback_data": f"dismiss_email:{draft_id}",
+                }
+            ]
+        ]
+        reply_markup = {"inline_keyboard": buttons}
+    else:
+        lines.append("")
+        lines.append("👉 Open Gmail to review and send.")
 
     text = "\n".join(lines)
     sent_count = 0
     for chat_id in subscribers:
-        if send_telegram_message(chat_id, text):
+        if send_telegram_message(chat_id, text, reply_markup=reply_markup):
             sent_count += 1
 
     return {
         "status": "success",
         "subject": subject,
+        "draft_id": draft_id,
         "delivered_count": sent_count,
     }
 
@@ -379,6 +479,32 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             }
             edit_telegram_message(chat_id, msg_id, res["formatted_reply"])
             return {"status": "ok", "action": f"transit_refreshed_{mode}"}
+
+        elif data.startswith("send_email_draft:"):
+            # format: send_email_draft:<draft_id>
+            draft_id = data.split(":")[1] if len(data.split(":")) > 1 else ""
+            queue_approved_draft(
+                draft_id=draft_id,
+                metadata={"chat_id": chat_id, "message_id": msg_id}
+            )
+            answer_callback_query(cq_id, text="🚀 Approved! Dispatching from Gmail...")
+
+            approved_text = (
+                "⏳ *Approved for Sending:*\n"
+                "The draft reply has been approved and is queued for immediate dispatch via Gmail. "
+                "You'll receive a delivery confirmation once sent! 🚀"
+            )
+            edit_telegram_message(chat_id, msg_id, approved_text)
+            return {"status": "ok", "action": "email_draft_approved", "draft_id": draft_id}
+
+        elif data.startswith("dismiss_email:"):
+            answer_callback_query(cq_id, text="Alert dismissed.")
+            edit_telegram_message(
+                chat_id,
+                msg_id,
+                "🔕 *Alert Dismissed:* The email remains in your inbox and the draft is safely saved in Gmail."
+            )
+            return {"status": "ok", "action": "email_alert_dismissed"}
 
         return {"status": "ignored"}
 
