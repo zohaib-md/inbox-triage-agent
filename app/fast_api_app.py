@@ -53,7 +53,36 @@ app: FastAPI = get_fast_api_app(
     lifespan=lifespan,
 )
 app.title = "inbox-triage-agent"
-app.description = "API for interacting with the inbox-triage-agent"
+app.description = "API for interacting with the inbox-triage-agent and voice-to-task agent"
+
+
+# --- Telegram & Voice-to-Task Routes ---
+@app.post("/telegram/webhook")
+async def telegram_webhook(update: dict):
+    """Webhook endpoint invoked by Telegram Bot API when messages or voice notes arrive."""
+    from app.telegram.handler import handle_telegram_update
+    return handle_telegram_update(update)
+
+
+@app.get("/telegram/set_webhook")
+async def telegram_set_webhook(url: str):
+    """Registers the webhook URL with Telegram."""
+    from app.telegram.handler import set_telegram_webhook
+    return set_telegram_webhook(url)
+
+
+@app.get("/telegram/info")
+async def telegram_info():
+    """Returns Telegram webhook info."""
+    from app.telegram.handler import get_telegram_webhook_info
+    return get_telegram_webhook_info()
+
+
+@app.get("/voice/records")
+async def voice_records():
+    """Returns all calendar events and tasks extracted from voice notes."""
+    from app.voice.tools import get_all_records
+    return get_all_records()
 
 
 # Main execution
@@ -61,3 +90,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
