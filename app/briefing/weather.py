@@ -1,9 +1,14 @@
 import json
 import logging
+import os
 import urllib.request
 from typing import Any
 
 logger = logging.getLogger("weather_client")
+
+DEFAULT_CITY = os.getenv("USER_CITY", "Lucknow")
+DEFAULT_LAT = float(os.getenv("USER_LAT", "26.8467"))
+DEFAULT_LON = float(os.getenv("USER_LON", "80.9462"))
 
 # WMO Weather interpretation codes (WW)
 WEATHER_CODES = {
@@ -23,9 +28,9 @@ WEATHER_CODES = {
 
 
 def get_current_weather(
-    lat: float = 28.6139,
-    lon: float = 77.2090,
-    city_name: str = "Delhi"
+    lat: float = DEFAULT_LAT,
+    lon: float = DEFAULT_LON,
+    city_name: str = DEFAULT_CITY,
 ) -> dict[str, Any]:
     """
     Fetches real-time weather using Open-Meteo free public API.
@@ -38,14 +43,23 @@ def get_current_weather(
     )
 
     try:
+        import ssl
+        try:
+            import certifi
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ssl_ctx = ssl._create_unverified_context()
+
         req = urllib.request.Request(url, headers={"User-Agent": "TaskzodBot/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+
+
             data = json.loads(resp.read().decode("utf-8"))
             current = data.get("current", {})
-            temp = current.get("temperature_2m", 28.0)
+            temp = current.get("temperature_2m", 31.0)
             code = current.get("weather_code", 0)
             desc = WEATHER_CODES.get(code, "🌤️ Fair")
-            humidity = current.get("relative_humidity_2m", 50)
+            humidity = current.get("relative_humidity_2m", 65)
 
             return {
                 "city": city_name,
@@ -58,8 +72,8 @@ def get_current_weather(
         logger.warning(f"Failed to fetch real-time weather: {e}")
         return {
             "city": city_name,
-            "temperature": "29°C",
-            "condition": "☀️ Clear and sunny",
-            "humidity": "45%",
-            "summary": "☀️ 29°C and pleasant",
+            "temperature": "31°C",
+            "condition": "⛅ Partly cloudy",
+            "humidity": "65%",
+            "summary": f"⛅ 31°C and pleasant in {city_name}",
         }

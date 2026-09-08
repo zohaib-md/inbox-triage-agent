@@ -18,7 +18,8 @@ def generate_morning_briefing(user_timezone: str = "Asia/Kolkata", user_name: st
     today_prefix = now.strftime("%Y-%m-%d")
 
     # 1. Weather
-    weather = get_current_weather(city_name="Delhi")
+    weather = get_current_weather()
+
 
     # 2. Today's Calendar Events
     today_events = [
