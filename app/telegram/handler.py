@@ -17,6 +17,179 @@ logger = logging.getLogger("telegram_handler")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8793298330:AAEdVPw2fCtSrRaVEaxcHajHnEu1QNiwcmE")
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
+SUBSCRIBERS_FILE = "/tmp/telegram_subscribers.json"
+_SUBSCRIBERS: set[int | str] = set()
+
+
+def _load_subscribers() -> set[int | str]:
+    global _SUBSCRIBERS
+    if _SUBSCRIBERS:
+        return _SUBSCRIBERS
+    if os.path.exists(SUBSCRIBERS_FILE):
+        try:
+            with open(SUBSCRIBERS_FILE, "r") as f:
+                data = json.load(f)
+                _SUBSCRIBERS.update(data)
+        except Exception:
+            pass
+    default_id = os.getenv("DEFAULT_TELEGRAM_CHAT_ID")
+    if default_id:
+        _SUBSCRIBERS.add(default_id)
+    return _SUBSCRIBERS
+
+
+def _save_subscribers() -> None:
+    try:
+        with open(SUBSCRIBERS_FILE, "w") as f:
+            json.dump(list(_SUBSCRIBERS), f)
+    except Exception as e:
+        logger.error(f"Failed to persist subscribers: {e}")
+
+
+def register_subscriber(chat_id: int | str) -> bool:
+    """Registers a chat ID to receive automated proactive pings."""
+    subs = _load_subscribers()
+    if chat_id not in subs:
+        subs.add(chat_id)
+        _save_subscribers()
+        logger.info(f"Registered new Telegram subscriber: {chat_id}")
+        return True
+    return False
+
+
+def unregister_subscriber(chat_id: int | str) -> bool:
+    """Unregisters a chat ID from automated proactive pings."""
+    subs = _load_subscribers()
+    if chat_id in subs:
+        subs.remove(chat_id)
+        _save_subscribers()
+        logger.info(f"Unregistered Telegram subscriber: {chat_id}")
+        return True
+    return False
+
+
+def get_subscribers() -> list[int | str]:
+    """Returns all currently registered subscriber chat IDs."""
+    return list(_load_subscribers())
+
+
+def set_telegram_webhook(url: str) -> dict[str, Any]:
+    """Registers the webhook URL with Telegram API."""
+    set_url = f"{TELEGRAM_API_BASE}/setWebhook?url={urllib.parse.quote(url)}"
+    try:
+        with urllib.request.urlopen(set_url, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to set webhook: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def get_telegram_webhook_info() -> dict[str, Any]:
+    """Fetches current webhook status from Telegram API."""
+    info_url = f"{TELEGRAM_API_BASE}/getWebhookInfo"
+    try:
+        with urllib.request.urlopen(info_url, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to get webhook info: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def send_morning_briefing_push() -> dict[str, Any]:
+    """Generates the morning briefing and pushes it to all registered subscribers."""
+    briefing_text = generate_morning_briefing()
+    subscribers = get_subscribers()
+    sent_count = 0
+    for chat_id in subscribers:
+        if send_telegram_message(chat_id, briefing_text):
+            sent_count += 1
+    return {
+        "status": "success",
+        "subscribers_count": len(subscribers),
+        "delivered_count": sent_count,
+        "briefing_preview": briefing_text[:120],
+    }
+
+
+def send_medication_reminder_push() -> dict[str, Any]:
+    """
+    Checks if there are pending medications for today and pushes interactive reminder cards.
+    """
+    status_data = get_today_medication_status()
+    items = status_data.get("items", [])
+    pending_items = [it for it in items if it.get("status") != "taken"]
+
+    if not pending_items:
+        return {"status": "noop", "message": "No pending medications to remind."}
+
+    subscribers = get_subscribers()
+    if not subscribers:
+        return {"status": "noop", "message": "No registered subscribers."}
+
+    lines = [
+        "💊 *Medication Reminder!*",
+        "It's time for your scheduled medicine. Staying on time keeps you healthy!",
+        "",
+    ]
+    buttons = []
+    for it in pending_items:
+        lines.append(f"• *{it['med_name']}* ({it['dosage']})\n  Scheduled: `{it['scheduled_time']}`")
+        buttons.append([
+            {
+                "text": f"✅ Take {it['med_name']} ({it['scheduled_time']})",
+                "callback_data": f"take_med:{it['med_name']}:{it['scheduled_time']}",
+            },
+            {
+                "text": "⏰ Snooze 15m",
+                "callback_data": f"snooze_med:{it['med_name']}:{it['scheduled_time']}",
+            }
+        ])
+
+    text = "\n".join(lines)
+    reply_markup = {"inline_keyboard": buttons}
+    sent_count = 0
+    for chat_id in subscribers:
+        if send_telegram_message(chat_id, text, reply_markup=reply_markup):
+            sent_count += 1
+
+    return {
+        "status": "success",
+        "pending_count": len(pending_items),
+        "delivered_count": sent_count,
+    }
+
+
+def send_urgent_email_alert_push(subject: str, sender: str, draft_reply: Optional[str] = None) -> dict[str, Any]:
+    """Pushes a high-priority alert when an urgent email is detected in Gmail."""
+    subscribers = get_subscribers()
+    if not subscribers:
+        return {"status": "noop", "message": "No registered subscribers."}
+
+    lines = [
+        "🚨 *Urgent Email Alert in Gmail!*",
+        "",
+        f"👤 *From:* {sender}",
+        f"📌 *Subject:* {subject}",
+    ]
+    if draft_reply:
+        lines.append("")
+        snippet = draft_reply[:200] + "..." if len(draft_reply) > 200 else draft_reply
+        lines.append(f"✍️ *AI Draft Prepared in Gmail:*\n_{snippet}_")
+    lines.append("")
+    lines.append("👉 Open Gmail to review and send.")
+
+    text = "\n".join(lines)
+    sent_count = 0
+    for chat_id in subscribers:
+        if send_telegram_message(chat_id, text):
+            sent_count += 1
+
+    return {
+        "status": "success",
+        "subject": subject,
+        "delivered_count": sent_count,
+    }
+
 
 def send_telegram_message(
     chat_id: int | str,
@@ -159,6 +332,7 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         data = cq.get("data", "")
         chat_id = cq["message"]["chat"]["id"]
         msg_id = cq["message"]["message_id"]
+        register_subscriber(chat_id)
 
         if data.startswith("take_med:"):
             # format: take_med:<med_name>:<time>
@@ -215,12 +389,16 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
 
     chat_id = message["chat"]["id"]
     text = (message.get("text") or "").strip()
+    register_subscriber(chat_id)
 
     # Commands: /start, /help
     if text.startswith("/start") or text.startswith("/help"):
         welcome_msg = (
             "👋 *Welcome to your Personal AI Assistant!*\n\n"
             "Here is everything you can do:\n\n"
+            "⏰ *Proactive Automation*\n"
+            "• `/subscribe` — Receive automated 8:00 AM briefing & medication reminders\n"
+            "• `/unsubscribe` — Pause automated reminders\n\n"
             "✈️ *Real-Time Flights, Trains & PNR*\n"
             "• `/flight <number>` e.g. `/flight 6E 204` or `/flight AI 432`\n"
             "• `/train <number/name>` e.g. `/train 12004` or `/train Vande Bharat`\n"
@@ -239,6 +417,30 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         )
         send_telegram_message(chat_id, welcome_msg)
         return {"status": "ok", "action": "sent_welcome"}
+
+    # Command: /subscribe
+    if text.startswith("/subscribe"):
+        register_subscriber(chat_id)
+        sub_msg = (
+            "✅ *Subscribed to Automated Proactive Pings!*\n\n"
+            "You will now automatically receive:\n"
+            "• ☀️ *8:00 AM Morning Briefing* (Lucknow Weather, Schedule & Meds)\n"
+            "• 💊 *Medication Reminder Cards* with 1-tap `[ ✅ Taken ]` buttons\n"
+            "• 🚨 *Urgent Email Alerts* when high-priority emails land in Gmail\n\n"
+            "Type `/unsubscribe` anytime to pause."
+        )
+        send_telegram_message(chat_id, sub_msg)
+        return {"status": "ok", "action": "subscribed"}
+
+    # Command: /unsubscribe
+    if text.startswith("/unsubscribe"):
+        unregister_subscriber(chat_id)
+        unsub_msg = (
+            "⏸️ *Unsubscribed from Automated Pings.*\n\n"
+            "You will no longer receive proactive reminders. Type `/subscribe` anytime to resume!"
+        )
+        send_telegram_message(chat_id, unsub_msg)
+        return {"status": "ok", "action": "unsubscribed"}
 
     # Command: /flight <flight_number>
     if text.startswith("/flight"):

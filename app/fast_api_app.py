@@ -113,6 +113,39 @@ async def briefing_today(name: str = "Zohaib"):
     return {"briefing": generate_morning_briefing(user_name=name)}
 
 
+# --- Proactive Broadcast & Push Routes ---
+@app.get("/telegram/subscribers")
+async def telegram_subscribers():
+    """Returns all currently registered Telegram subscriber chat IDs."""
+    from app.telegram.handler import get_subscribers
+    return {"subscribers": get_subscribers()}
+
+
+@app.post("/briefing/send")
+async def briefing_send():
+    """Triggers and pushes the 8:00 AM Morning Briefing to all subscribed Telegram chats."""
+    from app.telegram.handler import send_morning_briefing_push
+    return send_morning_briefing_push()
+
+
+@app.post("/health/remind")
+async def health_remind():
+    """Checks for pending medication doses and pushes interactive reminder cards to subscribers."""
+    from app.telegram.handler import send_medication_reminder_push
+    return send_medication_reminder_push()
+
+
+@app.post("/telegram/broadcast/urgent-email")
+async def broadcast_urgent_email(payload: dict):
+    """Pushes a high-priority alert to subscribers when an urgent email is triaged in Gmail."""
+    from app.telegram.handler import send_urgent_email_alert_push
+    return send_urgent_email_alert_push(
+        subject=payload.get("subject", "No Subject"),
+        sender=payload.get("sender", "Unknown"),
+        draft_reply=payload.get("draft_reply"),
+    )
+
+
 # Main execution
 if __name__ == "__main__":
     import uvicorn

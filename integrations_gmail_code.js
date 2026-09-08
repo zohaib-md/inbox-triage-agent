@@ -19,6 +19,7 @@ function triageInbox() {
   ensureLabelsExist();
   syncCalendarEvents();
   syncMedicationLogsToSheet();
+  checkMedicationAlerts();
 
   // Search inbox for unprocessed emails
 
@@ -67,6 +68,7 @@ function processThread(thread) {
     case "urgent":
       applyLabel(thread, LABELS.URGENT);
       thread.markImportant();
+      sendUrgentEmailAlert(subject, sender, draftReply);
       break;
     case "needs_reply":
       applyLabel(thread, LABELS.NEEDS_REPLY);
@@ -260,4 +262,52 @@ function syncMedicationLogsToSheet() {
   }
 }
 
+/**
+ * Pushes the automated 8:00 AM Morning Briefing to your Telegram chat!
+ * Setup: In Apps Script -> Triggers -> Add Trigger -> sendDailyMorningBriefing -> Time-driven -> Day timer -> 8am to 9am.
+ */
+function sendDailyMorningBriefing() {
+  try {
+    const url = `${BASE_URL}/briefing/send`;
+    const resp = UrlFetchApp.fetch(url, { method: "post", muteHttpExceptions: true });
+    Logger.log(`Morning Briefing broadcast response: ${resp.getContentText()}`);
+  } catch (err) {
+    Logger.log(`Error broadcasting morning briefing: ${err.message}`);
+  }
+}
 
+/**
+ * Checks for pending medication doses and pings Telegram with interactive buttons.
+ */
+function checkMedicationAlerts() {
+  try {
+    const url = `${BASE_URL}/health/remind`;
+    const resp = UrlFetchApp.fetch(url, { method: "post", muteHttpExceptions: true });
+    Logger.log(`Medication reminder response: ${resp.getContentText()}`);
+  } catch (err) {
+    Logger.log(`Error checking medication alerts: ${err.message}`);
+  }
+}
+
+/**
+ * Pushes an urgent alert to Telegram when a high-priority email is triaged.
+ */
+function sendUrgentEmailAlert(subject, sender, draftReply) {
+  try {
+    const url = `${BASE_URL}/telegram/broadcast/urgent-email`;
+    const payload = JSON.stringify({
+      subject: subject,
+      sender: sender,
+      draft_reply: draftReply || null
+    });
+    UrlFetchApp.fetch(url, {
+      method: "post",
+      contentType: "application/json",
+      payload: payload,
+      muteHttpExceptions: true
+    });
+    Logger.log(`Sent urgent email alert to Telegram for: "${subject}"`);
+  } catch (err) {
+    Logger.log(`Error sending urgent email alert to Telegram: ${err.message}`);
+  }
+}
