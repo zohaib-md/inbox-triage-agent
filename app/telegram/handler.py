@@ -197,6 +197,8 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         welcome_msg = (
             "👋 *Welcome to your Personal AI Assistant!*\n\n"
             "Here is everything you can do:\n\n"
+            "🔍 *Live Web Search & Local Scout*\n"
+            "Ask anything: _\"Top cafes in Hazratganj, Lucknow\"_ or type `/search <topic>`\n\n"
             "🎙️ *Voice-to-Task & Calendar*\n"
             "Speak naturally: _\"Doctor appointment tomorrow at 4 PM, and remind me to pay electricity bill tonight.\"_\n\n"
             "💊 *Medicine Reminders*\n"
@@ -209,11 +211,27 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         send_telegram_message(chat_id, welcome_msg)
         return {"status": "ok", "action": "sent_welcome"}
 
+    # Command: /search <query>
+    if text.startswith("/search"):
+        query = text[7:].strip()
+        if not query:
+            send_telegram_message(
+                chat_id,
+                "💡 Please provide a search query, for example:\n"
+                "`/search Top cafes in Hazratganj, Lucknow`"
+            )
+            return {"status": "ok", "action": "sent_search_help"}
+        from app.search.agent import search_live_web
+        search_res = search_live_web(query)
+        send_telegram_message(chat_id, search_res["formatted_reply"])
+        return {"status": "ok", "action": "live_search_performed"}
+
     # Command: /briefing (8:00 AM Morning Briefing on demand)
     if text.startswith("/briefing"):
         briefing_text = generate_morning_briefing()
         send_telegram_message(chat_id, briefing_text)
         return {"status": "ok", "action": "sent_briefing"}
+
 
     # Command: /meds (Today's Medication Status with interactive buttons)
     if text.startswith("/meds"):
@@ -297,11 +315,23 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             send_telegram_message(chat_id, med_result.confirmation_message, reply_markup=reply_markup)
             return {"status": "ok", "action": "medication_scheduled"}
 
+        # Check if text is a search query, local recommendation, or question
+        search_triggers = ["find", "search", "who is", "who won", "what is", "where is", "how to", "best ", "top ", "recommend", "latest news", "tell me about"]
+        is_search_intent = any(text.lower().startswith(trig) for trig in search_triggers) or (
+            text.endswith("?") and not any(k in text.lower() for k in ["tomorrow", "pm", "am", "schedule", "remind", "at "])
+        )
+        if is_search_intent:
+            from app.search.agent import search_live_web
+            search_res = search_live_web(text)
+            send_telegram_message(chat_id, search_res["formatted_reply"])
+            return {"status": "ok", "action": "live_search_performed"}
+
         # Otherwise: General Voice/Text Task Extraction
         result = process_voice_or_text(text=text)
         reply_body = format_telegram_reply(result)
         send_telegram_message(chat_id, reply_body)
         return {"status": "ok", "events_count": len(result.events), "tasks_count": len(result.tasks)}
+
 
     send_telegram_message(chat_id, "💡 Please send a voice note or text message.")
     return {"status": "ignored"}
