@@ -6,6 +6,7 @@ from app.telegram.handler import handle_telegram_update
 from app.vault.agent import (
     format_docs_list,
     ingest_document,
+    is_vault_query,
     list_vaulted_documents,
     query_vault,
 )
@@ -117,6 +118,30 @@ class TestTelegramVaultRouting(unittest.TestCase):
             "message": {
                 "chat": {"id": 888999},
                 "text": "/vault What is my insurance policy number?",
+            }
+        }
+        res = handle_telegram_update(update)
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(res["action"], "vault_queried")
+        mock_send.assert_called_once()
+
+    def test_is_vault_query(self):
+        self.assertTrue(is_vault_query("What is my college cgpa and graduation year?"))
+        self.assertTrue(is_vault_query("Where did I study?"))
+        self.assertTrue(is_vault_query("What is my insurance policy number?"))
+        self.assertTrue(is_vault_query("What was my Vitamin B12 result?"))
+        self.assertTrue(is_vault_query("What is my current role and experience?"))
+        self.assertFalse(is_vault_query("Top cafes in Hazratganj, Lucknow"))
+        self.assertFalse(is_vault_query("Who won the cricket match yesterday?"))
+        self.assertFalse(is_vault_query("Remind me to buy groceries tomorrow at 5pm"))
+
+    @patch("app.telegram.handler.send_telegram_message")
+    def test_telegram_natural_language_vault_query(self, mock_send):
+        mock_send.return_value = True
+        update = {
+            "message": {
+                "chat": {"id": 888999},
+                "text": "What is my college cgpa and graduation year?",
             }
         }
         res = handle_telegram_update(update)

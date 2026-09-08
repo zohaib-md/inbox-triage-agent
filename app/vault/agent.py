@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import uuid
 from typing import Any, Optional
 
@@ -254,6 +255,86 @@ def format_docs_list() -> str:
 
     lines.append("💡 *Ask anything about these files:* e.g. `/vault What was my test result?`")
     return "\n".join(lines).strip()
+
+
+def is_vault_query(text: str) -> bool:
+    """
+    Determines if user input is intended to query vaulted documents/personal records.
+    Distinguishes personal document questions from live web search and task creation.
+    """
+    text_clean = text.strip().lower()
+    if not text_clean:
+        return False
+
+    # Never intercept transit or system commands
+    if text_clean.startswith(("/flight", "/train", "/pnr", "/meds", "/briefing", "/subscribe", "/unsubscribe")):
+        return False
+
+    # Never intercept task / reminder creation
+    if any(text_clean.startswith(p) for p in ["remind me to", "set reminder", "add task", "create event", "schedule"]):
+        return False
+    if "remind" in text_clean and any(t in text_clean for t in ["tomorrow", "tonight", "at ", "pm", "am"]):
+        return False
+
+    # 1. Explicit vault and document terms
+    explicit_vault_terms = [
+        "vault", "my pdf", "my document", "my file", "uploaded document", "uploaded file",
+        "in my resume", "in my cv", "in my report", "in my agreement", "in my contract",
+        "in my insurance", "in my policy", "in my lease", "in my records",
+    ]
+    if any(t in text_clean for t in explicit_vault_terms):
+        return True
+
+    # 2. Key personal record & document topics
+    doc_topics = [
+        "cgpa", "gpa", "college", "university", "graduation", "degree",
+        "resume", "cv", "curriculum vitae", "internship", "work experience",
+        "blood test", "lab report", "test result", "lipid profile", "hba1c",
+        "vitamin b12", "vitamin d", "cholesterol", "thyroid", "hemoglobin",
+        "insurance policy", "policy number", "sum insured", "coverage amount",
+        "health insurance", "vehicle insurance", "car insurance", "bike insurance",
+        "lease agreement", "rent agreement", "rental contract", "landlord", "security deposit",
+        "my marks", "my percentage", "my education", "my salary", "my stipend", "my experience",
+        "my role", "my job", "my company", "my skills", "my project"
+    ]
+    if any(topic in text_clean for topic in doc_topics):
+        return True
+
+    # 3. Personal inquiry question prefixes
+    personal_question_prefixes = [
+        "what is my", "what are my", "what's my", "where did i", "where do i",
+        "when did i", "when does my", "how much is my", "who is my", "tell me about my",
+        "details of my", "show my", "check my", "what was my"
+    ]
+    if any(text_clean.startswith(p) for p in personal_question_prefixes):
+        # Exclude general weather queries
+        if not any(k in text_clean for k in ["weather", "temperature", "forecast"]):
+            return True
+
+    # 4. General "my " questions asking about personal background/records
+    if "my " in text_clean:
+        personal_nouns = [
+            "college", "school", "degree", "cgpa", "gpa", "grades", "marks", "job",
+            "role", "company", "internship", "resume", "cv", "profile", "skills",
+            "doctor", "prescription", "report", "test", "results", "policy", "insurance",
+            "premium", "agreement", "lease", "rent", "contract", "salary", "bonus"
+        ]
+        if any(noun in text_clean for noun in personal_nouns):
+            return True
+
+    # 5. Dynamic match against vaulted document catalog
+    docs = _load_vault_index()
+    if docs:
+        words = set(re.findall(r"\b[a-zA-Z]{3,}\b", text_clean))
+        for d in docs:
+            # Check filename tokens (e.g., "zohaib", "resume")
+            fn_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", d.get("filename", "").lower()))
+            if words & fn_tokens:
+                if any(q in text_clean for q in ["what", "where", "who", "when", "how", "tell", "show", "?"]):
+                    return True
+
+    return False
+
 
 
 def _parse_ingest_response(raw_text: str, filename: str) -> tuple[str, str, list[str]]:

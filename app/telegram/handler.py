@@ -827,14 +827,9 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             send_telegram_message(chat_id, train_res["formatted_reply"], reply_markup=reply_markup)
             return {"status": "ok", "action": "train_tracked"}
 
-        # Check if text is asking about personal vaulted documents/medical reports
-        vault_triggers = [
-            "my blood test", "my lab report", "my report", "my test result",
-            "my insurance", "my policy", "my agreement", "my contract", "my lease", "my rent",
-            "in my pdf", "in my document", "in my vault", "what was my vitamin", "what was my cholesterol", "what was my hba1c"
-        ]
-        if any(trig in text.lower() for trig in vault_triggers):
-            from app.vault.agent import query_vault
+        # Check if text is asking about personal vaulted documents/medical reports/profile
+        from app.vault.agent import is_vault_query, query_vault
+        if is_vault_query(text):
             vault_res = query_vault(text)
             send_telegram_message(chat_id, vault_res["formatted_reply"])
             return {"status": "ok", "action": "vault_queried"}
