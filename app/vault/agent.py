@@ -37,6 +37,10 @@ Answer the user's question accurately and authoritatively based on their vaulted
 """
 
 
+def _is_testing() -> bool:
+    return "PYTEST_CURRENT_TEST" in os.environ or os.getenv("TESTING") == "true"
+
+
 def _load_vault_index() -> list[dict[str, Any]]:
     """Loads document metadata from local cache, GCS bucket, or bundled seed."""
     # 1. Local cache file
@@ -49,8 +53,8 @@ def _load_vault_index() -> list[dict[str, Any]]:
         except Exception as e:
             logger.error(f"Error loading vault index from local file: {e}")
 
-    # 2. Cloud Storage persistent bucket
-    if GCS_VAULT_BUCKET:
+    # 2. Cloud Storage persistent bucket (skip during unit tests)
+    if GCS_VAULT_BUCKET and not _is_testing():
         try:
             from google.cloud import storage
             client = storage.Client()
@@ -69,15 +73,16 @@ def _load_vault_index() -> list[dict[str, Any]]:
             logger.warning(f"Could not load vault index from GCS: {e}")
 
     # 3. Bundled seed file (persists across Cloud Run deployments)
-    seed_path = os.path.join(os.path.dirname(__file__), "vault_index_seed.json")
-    if os.path.exists(seed_path):
-        try:
-            with open(seed_path, "r") as f:
-                seed_data = json.load(f)
-                if seed_data:
-                    return seed_data
-        except Exception as e:
-            logger.warning(f"Could not load vault seed: {e}")
+    if not _is_testing():
+        seed_path = os.path.join(os.path.dirname(__file__), "vault_index_seed.json")
+        if os.path.exists(seed_path):
+            try:
+                with open(seed_path, "r") as f:
+                    seed_data = json.load(f)
+                    if seed_data:
+                        return seed_data
+            except Exception as e:
+                logger.warning(f"Could not load vault seed: {e}")
 
     return []
 
@@ -90,7 +95,7 @@ def _save_vault_index(docs: list[dict[str, Any]]) -> None:
     except Exception as e:
         logger.error(f"Error saving local vault index: {e}")
 
-    if GCS_VAULT_BUCKET:
+    if GCS_VAULT_BUCKET and not _is_testing():
         try:
             from google.cloud import storage
             client = storage.Client()
@@ -121,7 +126,7 @@ def ingest_document(
     except Exception as e:
         logger.error(f"Failed to write file to vault: {e}")
 
-    if GCS_VAULT_BUCKET:
+    if GCS_VAULT_BUCKET and not _is_testing():
         try:
             from google.cloud import storage
             client = storage.Client()

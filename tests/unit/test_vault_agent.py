@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -15,12 +16,23 @@ from app.vault.agent import (
 class TestVaultAgent(unittest.TestCase):
 
     def setUp(self):
+        self.temp_index = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        self.temp_index.write(b"[]")
+        self.temp_index.close()
+        self.patcher = patch("app.vault.agent.VAULT_INDEX_FILE", self.temp_index.name)
+        self.patcher.start()
+
         sample_bytes = b"%PDF-1.4 sample test content for medical lab test Vitamin B12 and HbA1c"
         ingest_document(
             file_bytes=sample_bytes,
             filename="Blood_Test_Report_July.pdf",
             mime_type="application/pdf",
         )
+
+    def tearDown(self):
+        self.patcher.stop()
+        if os.path.exists(self.temp_index.name):
+            os.unlink(self.temp_index.name)
 
     def test_ingest_document_fallback(self):
         sample_bytes = b"%PDF-1.4 sample test content for medical lab test Vitamin B12 and HbA1c"
@@ -53,6 +65,18 @@ class TestVaultAgent(unittest.TestCase):
 
 
 class TestTelegramVaultRouting(unittest.TestCase):
+
+    def setUp(self):
+        self.temp_index = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        self.temp_index.write(b"[]")
+        self.temp_index.close()
+        self.patcher = patch("app.vault.agent.VAULT_INDEX_FILE", self.temp_index.name)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        if os.path.exists(self.temp_index.name):
+            os.unlink(self.temp_index.name)
 
     @patch("app.telegram.handler.download_telegram_file")
     @patch("app.telegram.handler.send_telegram_message")
