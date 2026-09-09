@@ -302,7 +302,8 @@ function syncTasksToSheet() {
 
     const data = JSON.parse(resp.getContentText());
     const tasks = data.tasks || [];
-    if (tasks.length === 0) return;
+    const events = data.events || [];
+    if (tasks.length === 0 && events.length === 0) return;
 
     const sheetName = "My Tasks & Reminders Log";
     const files = DriveApp.getFilesByName(sheetName);
@@ -312,27 +313,48 @@ function syncTasksToSheet() {
     } else {
       spreadsheet = SpreadsheetApp.create(sheetName);
       const sheet = spreadsheet.getActiveSheet();
-      sheet.appendRow(["Task / Reminder", "Due Date", "Priority", "Category", "Logged Date", "Status"]);
+      sheet.appendRow(["Task / Reminder", "Due Date / Time", "Priority", "Category", "Logged Date", "Status"]);
       sheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#E8F0FE");
     }
 
     const sheet = spreadsheet.getActiveSheet();
     const existingData = sheet.getDataRange().getValues();
-    const existingTasks = new Set(existingData.map(row => `${row[0]}_${row[1]}`));
+    const existingKeys = new Set(existingData.map(row => `${String(row[0]).trim().toLowerCase()}_${String(row[1]).trim().split("T")[0]}`));
 
+    // 1. Sync Calendar Events (reminders with specific dates/times)
+    for (const ev of events) {
+      const datePart = (ev.start_time || "").split("T")[0];
+      const key = `${String(ev.title).trim().toLowerCase()}_${datePart}`;
+      if (!existingKeys.has(key)) {
+        const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+        sheet.appendRow([
+          ev.title,
+          ev.start_time ? ev.start_time.replace("T", " ") : "No date",
+          "HIGH",
+          "calendar",
+          todayStr,
+          "Scheduled in Calendar"
+        ]);
+        existingKeys.add(key);
+        Logger.log(`Appended calendar reminder to Google Sheet: "${ev.title}"`);
+      }
+    }
+
+    // 2. Sync To-Do Tasks
     for (const tk of tasks) {
-      const key = `${tk.task}_${tk.due_date || ""}`;
-      if (!existingTasks.has(key)) {
+      const datePart = (tk.due_date || "No deadline").split("T")[0];
+      const key = `${String(tk.task).trim().toLowerCase()}_${datePart}`;
+      if (!existingKeys.has(key)) {
         const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
         sheet.appendRow([
           tk.task,
           tk.due_date || "No deadline",
           (tk.priority || "medium").toUpperCase(),
-          tk.category || "general",
+          tk.category || "personal",
           todayStr,
           "Pending"
         ]);
-        existingTasks.add(key);
+        existingKeys.add(key);
         Logger.log(`Appended task to Google Sheet: "${tk.task}"`);
       }
     }

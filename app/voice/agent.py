@@ -91,6 +91,19 @@ def process_voice_or_text(
         # Fallback heuristic parser for testing or if Gemini API unavailable
         result = _fallback_heuristic_parser(text=text, time_context=time_context, error_msg=str(e))
 
+    # Ensure every calendar event is also reflected in tasks so sheets and to-do lists stay synchronized
+    for ev in result.events:
+        if not any(t.task.lower() == ev.title.lower() for t in result.tasks):
+            due = ev.start_time.split("T")[0] if ev.start_time and "T" in ev.start_time else ev.start_time
+            result.tasks.append(
+                TodoTask(
+                    task=ev.title,
+                    due_date=due,
+                    priority="high",
+                    category="personal",
+                )
+            )
+
     # Commit extracted items using tools
     for ev in result.events:
         schedule_calendar_event(
