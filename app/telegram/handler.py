@@ -877,7 +877,16 @@ def format_telegram_reply(result: VoiceExtractionResult) -> str:
         for tk in result.tasks:
             due = f" (⏳ Due: {tk.due_date})" if tk.due_date else ""
             prio = "🔴 High" if tk.priority == "high" else "🟡 Medium" if tk.priority == "medium" else "🟢 Low"
-            lines.append(f"• *{tk.task}*{due}\n  Priority: {prio} | Category: #{tk.category}")
+            cal_link_line = ""
+            if tk.due_date:
+                iso_time = f"{tk.due_date}T09:00:00" if len(tk.due_date) == 10 else tk.due_date
+                cal_url = generate_google_calendar_url(
+                    f"Reminder: {tk.task}",
+                    iso_time,
+                    details=f"Priority: {prio} | Category: #{tk.category}"
+                )
+                cal_link_line = f"\n  👉 [Add Reminder to Google Calendar]({cal_url})"
+            lines.append(f"• *{tk.task}*{due}\n  Priority: {prio} | Category: #{tk.category}{cal_link_line}")
         lines.append("")
 
     if not result.events and not result.tasks:
