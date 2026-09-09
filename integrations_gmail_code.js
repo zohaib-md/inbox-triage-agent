@@ -215,6 +215,26 @@ function syncCalendarEvents() {
         Logger.log(`Created Google Calendar event: "${ev.title}" at ${startTime}`);
       }
     }
+
+    // Also automatically schedule any To-Do items with specific due dates on the calendar
+    const tasks = data.tasks || [];
+    for (const tk of tasks) {
+      if (!tk.due_date) continue;
+      const taskTitle = tk.task.startsWith("Reminder:") ? tk.task : `Reminder: ${tk.task}`;
+      const startTime = new Date(`${tk.due_date}T09:00:00`);
+      const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+
+      const searchStart = new Date(startTime.getTime() - 2 * 60 * 60 * 1000);
+      const searchEnd = new Date(endTime.getTime() + 2 * 60 * 60 * 1000);
+      const existing = calendar.getEvents(searchStart, searchEnd, { search: tk.task });
+
+      if (existing.length === 0) {
+        calendar.createEvent(taskTitle, startTime, endTime, {
+          description: `Scheduled via @Taskzod_bot (Priority: ${tk.priority || "medium"})`
+        });
+        Logger.log(`Created Google Calendar reminder: "${taskTitle}" on ${tk.due_date}`);
+      }
+    }
   } catch (err) {
     Logger.log(`Error syncing calendar: ${err.message}`);
   }
