@@ -19,6 +19,7 @@ function triageInbox() {
   ensureLabelsExist();
   syncCalendarEvents();
   syncMedicationLogsToSheet();
+  syncTasksToSheet();
   checkMedicationAlerts();
   sendApprovedDrafts();
   syncVaultDocumentsToDrive();
@@ -287,6 +288,56 @@ function syncMedicationLogsToSheet() {
     }
   } catch (err) {
     Logger.log(`Error syncing medication logs to Sheet: ${err.message}`);
+  }
+}
+
+/**
+ * Automatically syncs to-do items and reminders into a Google Sheet in Google Drive!
+ */
+function syncTasksToSheet() {
+  try {
+    const url = `${BASE_URL}/voice/records`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const tasks = data.tasks || [];
+    if (tasks.length === 0) return;
+
+    const sheetName = "My Tasks & Reminders Log";
+    const files = DriveApp.getFilesByName(sheetName);
+    let spreadsheet;
+    if (files.hasNext()) {
+      spreadsheet = SpreadsheetApp.open(files.next());
+    } else {
+      spreadsheet = SpreadsheetApp.create(sheetName);
+      const sheet = spreadsheet.getActiveSheet();
+      sheet.appendRow(["Task / Reminder", "Due Date", "Priority", "Category", "Logged Date", "Status"]);
+      sheet.getRange(1, 1, 1, 6).setFontWeight("bold").setBackground("#E8F0FE");
+    }
+
+    const sheet = spreadsheet.getActiveSheet();
+    const existingData = sheet.getDataRange().getValues();
+    const existingTasks = new Set(existingData.map(row => `${row[0]}_${row[1]}`));
+
+    for (const tk of tasks) {
+      const key = `${tk.task}_${tk.due_date || ""}`;
+      if (!existingTasks.has(key)) {
+        const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+        sheet.appendRow([
+          tk.task,
+          tk.due_date || "No deadline",
+          (tk.priority || "medium").toUpperCase(),
+          tk.category || "general",
+          todayStr,
+          "Pending"
+        ]);
+        existingTasks.add(key);
+        Logger.log(`Appended task to Google Sheet: "${tk.task}"`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error syncing tasks to Sheet: ${err.message}`);
   }
 }
 
