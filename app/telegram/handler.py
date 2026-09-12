@@ -541,6 +541,9 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             "💊 *Medicine Reminders*\n"
             "Speak or type: _\"Remind me to take Vitamin D3 1000 IU every morning at 9 AM.\"_\n"
             "• Type `/meds` to see today's pills and adherence status.\n\n"
+            "📞 *Autonomous AI Phone Calls*\n"
+            "• `/call <phone> <mission>` — AI calls clinics, restaurants, or services to check availability or book appointments autonomously!\n"
+            "• Example: `/call +919876543210 Check Dr. Verma's availability today around 5:30 PM`\n\n"
             "☀️ *Daily Morning Secretary*\n"
             "• Type `/briefing` for your complete morning briefing (Weather + Calendar + Meds + Tasks)!\n\n"
             "How can I help you today?"
@@ -718,6 +721,52 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         send_telegram_message(chat_id, "\n".join(lines), reply_markup=reply_markup)
         return {"status": "ok", "action": "sent_meds_status"}
 
+    # Command: /call <phone_number> <mission>
+    if text.startswith("/call"):
+        parts = text[5:].strip().split(maxsplit=1)
+        if len(parts) < 2:
+            send_telegram_message(
+                chat_id,
+                "💡 *Outbound Calling Assistant:*\n\n"
+                "Usage: `/call <phone_number> <mission>`\n"
+                "Example: `/call +919876543210 Check Dr. Verma's availability today around 5:30 PM`\n"
+                "Your assistant will place the call, converse naturally, and send you a debrief card with 1-tap calendar booking!"
+            )
+            return {"status": "ok", "action": "sent_call_help"}
+
+        phone_str, mission_str = parts[0], parts[1]
+        try:
+            from app.calls.telephony import initiate_outbound_call, normalize_e164
+            norm_phone = normalize_e164(phone_str)
+        except ValueError as ve:
+            send_telegram_message(chat_id, f"❌ *Invalid phone number:* {str(ve)}\nPlease provide standard E.164 format (e.g. `+919876543210`).")
+            return {"status": "error", "reason": "invalid_phone"}
+
+        # Rule 1: Send dispatch card BEFORE initiate_outbound_call()
+        dispatch_card = (
+            f"📞 *Initiating Outbound Phone Call...*\n"
+            f"🎯 *Target:* `{norm_phone}`\n"
+            f"📋 *Mission:* {mission_str}\n"
+            f"⏳ *Status:* Dialing recipient now..."
+        )
+        send_telegram_message(chat_id, dispatch_card)
+
+        try:
+            dispatch_result = initiate_outbound_call(
+                to_number=norm_phone,
+                mission=mission_str,
+                chat_id=chat_id,
+            )
+            return {
+                "status": "ok",
+                "action": "call_initiated",
+                "session_id": dispatch_result.session_id,
+                "mode": dispatch_result.mode,
+            }
+        except Exception as e:
+            send_telegram_message(chat_id, f"❌ *Failed to place call:* {str(e)}")
+            return {"status": "error", "reason": str(e)}
+
     # Voice Note or Audio
     voice = message.get("voice") or message.get("audio")
     if voice:
@@ -797,6 +846,41 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             send_telegram_message(chat_id, med_result.confirmation_message, reply_markup=reply_markup)
             return {"status": "ok", "action": "medication_scheduled"}
 
+        # Check if text is an outbound call intent (e.g. "call +919876543210 to check availability")
+        call_match = re.match(r"^call\s+(\+?[0-9\s\-]{10,16})\s+(.+)$", text, re.IGNORECASE)
+        if call_match:
+            phone_raw = call_match.group(1).strip()
+            mission_raw = call_match.group(2).strip()
+            try:
+                from app.calls.telephony import initiate_outbound_call, normalize_e164
+                norm_phone = normalize_e164(phone_raw)
+            except ValueError:
+                norm_phone = None
+
+            if norm_phone:
+                dispatch_card = (
+                    f"📞 *Initiating Outbound Phone Call...*\n"
+                    f"🎯 *Target:* `{norm_phone}`\n"
+                    f"📋 *Mission:* {mission_raw}\n"
+                    f"⏳ *Status:* Dialing recipient now..."
+                )
+                send_telegram_message(chat_id, dispatch_card)
+                try:
+                    dispatch_result = initiate_outbound_call(
+                        to_number=norm_phone,
+                        mission=mission_raw,
+                        chat_id=chat_id,
+                    )
+                    return {
+                        "status": "ok",
+                        "action": "call_initiated",
+                        "session_id": dispatch_result.session_id,
+                        "mode": dispatch_result.mode,
+                    }
+                except Exception as e:
+                    send_telegram_message(chat_id, f"❌ *Failed to place call:* {str(e)}")
+                    return {"status": "error", "reason": str(e)}
+
         # Check if text is a flight query (e.g. "6E 204", "AI 432", "flight status")
         flight_pattern = r"\b(6E|AI|UK|SG|QP|G8|IX|I5|EK|QR|BA|LH|EY|FZ|TG|MH)\s*[- ]?\s*(\d{2,4})\b"
         if re.search(flight_pattern, text, re.IGNORECASE) or text.lower().startswith("flight"):
@@ -817,7 +901,7 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             or bool(re.search(r"\b\d{5}\b", text))
             or any(w in text.lower() for w in ["running status", "train status", "where is train", "vande bharat", "shatabdi", "rajdhani", "lucknow mail"])
         )
-        if is_train_query and not any(k in text.lower() for k in ["remind", "medicine", "pill", "phone", "mobile"]):
+        if is_train_query and not any(k in text.lower() for k in ["call", "remind", "medicine", "pill", "phone", "mobile"]):
             train_res = track_train_status(text)
             reply_markup = {
                 "inline_keyboard": [
@@ -844,7 +928,6 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
             search_res = search_live_web(text)
             send_telegram_message(chat_id, search_res["formatted_reply"])
             return {"status": "ok", "action": "live_search_performed"}
-
         # Otherwise: General Voice/Text Task Extraction
         result = process_voice_or_text(text=text)
         reply_body = format_telegram_reply(result)

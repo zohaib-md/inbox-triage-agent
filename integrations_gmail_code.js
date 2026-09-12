@@ -20,6 +20,7 @@ function triageInbox() {
   syncCalendarEvents();
   syncMedicationLogsToSheet();
   syncTasksToSheet();
+  syncCallsToSheet();
   checkMedicationAlerts();
   sendApprovedDrafts();
   syncVaultDocumentsToDrive();
@@ -521,4 +522,79 @@ function syncVaultDocumentsToDrive() {
     Logger.log(`Error syncing vault documents to Drive: ${err.message}`);
   }
 }
+
+/**
+ * Automatically syncs autonomous AI outbound phone calls into a Google Sheet in Google Drive!
+ */
+function syncCallsToSheet() {
+  try {
+    const url = `${BASE_URL}/calls/history`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return;
+
+    const data = JSON.parse(resp.getContentText());
+    const calls = data.calls || [];
+    if (calls.length === 0) return;
+
+    const sheetName = "My AI Phone Calls & Outreach Log";
+    const files = DriveApp.getFilesByName(sheetName);
+    let spreadsheet;
+    if (files.hasNext()) {
+      spreadsheet = SpreadsheetApp.open(files.next());
+    } else {
+      spreadsheet = SpreadsheetApp.create(sheetName);
+      const sheet = spreadsheet.getActiveSheet();
+      sheet.appendRow([
+        "Call ID",
+        "Date",
+        "Recipient",
+        "Mission",
+        "Duration",
+        "Outcome",
+        "Extracted Details",
+        "Mode",
+        "Recording URL"
+      ]);
+      sheet.getRange(1, 1, 1, 9).setFontWeight("bold").setBackground("#E8F0FE");
+    }
+
+    const sheet = spreadsheet.getActiveSheet();
+    const existingData = sheet.getDataRange().getValues();
+    const existingIds = new Set(existingData.map(row => String(row[0])));
+
+    for (const call of calls) {
+      if (!existingIds.has(String(call.session_id))) {
+        const datePart = (call.created_at || "").split("T")[0];
+        let detailsStr = "None";
+        if (call.extracted_data) {
+          const parts = [];
+          if (call.extracted_data.title) parts.push(`Title: ${call.extracted_data.title}`);
+          if (call.extracted_data.start_time) parts.push(`Time: ${call.extracted_data.start_time}`);
+          if (call.extracted_data.location) parts.push(`Location: ${call.extracted_data.location}`);
+          if (call.extracted_data.fee) parts.push(`Fee: ${call.extracted_data.fee}`);
+          detailsStr = parts.join(" | ") || call.extracted_data.outcome || "Captured";
+        }
+
+        const statusIcon = call.status === "completed" ? "✅ Completed" : `⚠️ ${call.status}`;
+
+        sheet.appendRow([
+          call.session_id,
+          datePart,
+          call.to_number,
+          call.mission,
+          `${call.duration_seconds || 0}s`,
+          statusIcon,
+          detailsStr,
+          call.mode || "live",
+          call.recording_url || "N/A"
+        ]);
+        existingIds.add(String(call.session_id));
+        Logger.log(`Synced AI phone call to Google Sheet: "${call.mission}" (${call.to_number})`);
+      }
+    }
+  } catch (err) {
+    Logger.log(`Error syncing calls to Google Sheet: ${err.message}`);
+  }
+}
+
 
