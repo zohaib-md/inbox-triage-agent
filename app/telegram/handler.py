@@ -757,6 +757,13 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
                 mission=mission_str,
                 chat_id=chat_id,
             )
+            if dispatch_result.status == "error":
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ *Outbound Dialing Failed:*\n{dispatch_result.message}"
+                )
+                return {"status": "error", "reason": dispatch_result.message}
+
             return {
                 "status": "ok",
                 "action": "call_initiated",
@@ -871,6 +878,13 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
                         mission=mission_raw,
                         chat_id=chat_id,
                     )
+                    if dispatch_result.status == "error":
+                        send_telegram_message(
+                            chat_id,
+                            f"⚠️ *Outbound Dialing Failed:*\n{dispatch_result.message}"
+                        )
+                        return {"status": "error", "reason": dispatch_result.message}
+
                     return {
                         "status": "ok",
                         "action": "call_initiated",

@@ -147,15 +147,31 @@ def initiate_outbound_call(
             twiml_url = f"{PUBLIC_BASE_URL}/calls/twiml?session_id={session_id}"
             status_url = f"{PUBLIC_BASE_URL}/calls/status?session_id={session_id}"
 
-            call = client.calls.create(
-                to=normalized_phone,
-                from_=TWILIO_PHONE_NUMBER,
-                url=twiml_url,
-                status_callback=status_url,
-                status_callback_event=["initiated", "ringing", "answered", "completed"],
-                status_callback_method="POST",
-                record=True,
-            )
+            call_kwargs = {
+                "to": normalized_phone,
+                "from_": TWILIO_PHONE_NUMBER,
+                "url": twiml_url,
+                "status_callback": status_url,
+            }
+            if os.getenv("TWILIO_RECORD_CALLS", "false").lower() == "true":
+                call_kwargs["record"] = True
+                call_kwargs["status_callback_event"] = ["initiated", "ringing", "answered", "completed"]
+                call_kwargs["status_callback_method"] = "POST"
+
+            try:
+                call = client.calls.create(**call_kwargs)
+            except Exception as tw_err:
+                if "trial accounts have limited parameter access" in str(tw_err).lower() or "disallowed parameters" in str(tw_err).lower():
+                    logger.info("Retrying with minimal trial-safe Twilio parameters")
+                    call = client.calls.create(
+                        to=normalized_phone,
+                        from_=TWILIO_PHONE_NUMBER,
+                        url=twiml_url,
+                        status_callback=status_url,
+                    )
+                else:
+                    raise tw_err
+
             session.call_sid = call.sid
             save_call_session(session)
 
